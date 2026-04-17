@@ -19,6 +19,24 @@ export function useGithubRepositories() {
   const [searchTerm, setSearchTerm] = useState("react");
   const [statusMessage, setStatusMessage] = useState("Loading repositories...");
 
+  const searchRepositories = async (
+    keyword: string,
+  ): Promise<RepositoryViewModel[]> => {
+    const response = await fetch(
+      `https://api.github.com/search/repositories?q=${encodeURIComponent(keyword)}`,
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch repositories");
+    }
+
+    const data: SearchRepositoriesResponse = await response.json();
+    return data.items.map((repository) => ({
+      fullName: repository.full_name,
+      url: repository.html_url,
+    }));
+  };
+
   const fetchRepositories = async (keyword: string) => {
     const trimmedKeyword = keyword.trim();
 
@@ -30,19 +48,7 @@ export function useGithubRepositories() {
     setStatusMessage("Loading repositories...");
 
     try {
-      const response = await fetch(
-        `https://api.github.com/search/repositories?q=${encodeURIComponent(trimmedKeyword)}`,
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch repositories");
-      }
-
-      const data: SearchRepositoriesResponse = await response.json();
-      const mappedRepositories = data.items.map((repository) => ({
-        fullName: repository.full_name,
-        url: repository.html_url,
-      }));
+      const mappedRepositories = await searchRepositories(trimmedKeyword);
 
       setRepositories(mappedRepositories);
       setStatusMessage(
@@ -54,7 +60,28 @@ export function useGithubRepositories() {
   };
 
   useEffect(() => {
-    void fetchRepositories("react");
+    let isCancelled = false;
+
+    void searchRepositories("react")
+      .then((mappedRepositories) => {
+        if (isCancelled) {
+          return;
+        }
+
+        setRepositories(mappedRepositories);
+        setStatusMessage(
+          mappedRepositories.length > 0 ? "" : "No repositories found.",
+        );
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setStatusMessage("Failed to fetch repositories.");
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
   }, []);
 
   const handleSearch = () => {
